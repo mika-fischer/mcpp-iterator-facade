@@ -127,6 +127,31 @@ using add_sentinel_interface = std::conditional_t<
     std::conditional_t<has_is_at_end<State>, unsized_sentinel_interface<Iter, State>, no_sentinel_interface>>;
 
 template <typename Iter, typename State>
+struct bidirectional_interface {
+    auto operator--() -> Iter & {
+        if constexpr (detail::has_decrement<State>) {
+            this->state().decrement();
+        } else {
+            static_assert(detail::has_advance<State>, "Need .advance() or .decrement()");
+            this->state().advance(-1);
+        }
+        return *this;
+    }
+
+    auto operator--(int) -> Iter {
+        auto copy = *this;
+        operator--();
+        return copy;
+    }
+};
+
+struct no_bidirectional_interface {};
+
+template <typename Iter, typename State>
+using add_bidirectional_interface =
+    std::conditional_t<is_random_access<State>, bidirectional_interface<Iter, State>, no_bidirectional_interface>;
+
+template <typename Iter, typename State>
 struct random_access_interface {
     using reference = typename detail::iterator_traits<State>::reference;
     using difference_type = typename detail::iterator_traits<State>::difference_type;
@@ -158,6 +183,7 @@ using add_random_access_interface =
 
 template <typename State>
 class iterator_facade : public detail::add_sentinel_interface<iterator_facade<State>, State>,
+                        public detail::add_bidirectional_interface<iterator_facade<State>, State>,
                         public detail::add_random_access_interface<iterator_facade<State>, State> {
   private:
     static_assert(detail::has_dereference<State>, "Need .dereference()");
@@ -222,29 +248,6 @@ class iterator_facade : public detail::add_sentinel_interface<iterator_facade<St
         } else {
             auto copy = *this;
             operator++();
-            return copy;
-        }
-    }
-
-    template <typename T = State, typename = std::enable_if_t<detail::is_bidirectional<T>>>
-    auto operator--() -> iterator_facade {
-        if constexpr (detail::has_decrement<State>) {
-            this->state().decrement();
-        } else {
-            static_assert(detail::has_advance<State>, "Need .advance() or .decrement()");
-            this->state().advance(-1);
-        }
-        return *this;
-    }
-
-    template <typename T = State, typename = std::enable_if_t<detail::is_bidirectional<T>>>
-    auto operator--(int)
-        -> std::conditional_t<std::is_same_v<iterator_category, std::input_iterator_tag>, void, iterator_facade> {
-        if constexpr (std::is_same_v<iterator_category, std::input_iterator_tag>) {
-            return operator--();
-        } else {
-            auto copy = *this;
-            operator--();
             return copy;
         }
     }

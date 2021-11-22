@@ -124,6 +124,8 @@ static_assert(std::is_same_v<decltype(std::declval<sr_iter>() < std::declval<con
 static_assert(std::is_same_v<decltype(std::declval<sr_iter>()[2]), stream_view>);
 static_assert(std::is_same_v<decltype(std::declval<sr_iter>() - 2), sr_iter>);
 static_assert(std::is_same_v<decltype(2 + std::declval<sr_iter>()), sr_iter>);
+static_assert(std::is_same_v<decltype(--std::declval<sr_iter>()), sr_iter &>);
+static_assert(std::is_same_v<decltype(std::declval<sr_iter>()--), sr_iter>);
 
 // runtime tests
 auto main() -> int {
