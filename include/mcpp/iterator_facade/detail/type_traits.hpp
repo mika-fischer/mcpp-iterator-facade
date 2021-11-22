@@ -60,4 +60,15 @@ using is_detected_convertible = std::is_convertible<detected_t<Op, Args...>, To>
 template <class To, template <class...> class Op, class... Args>
 constexpr inline bool is_detected_convertible_v = is_detected_convertible<To, Op, Args...>::value;
 
+// End of detector idiom
+
+template <typename Struct, typename... Args>
+using is_direct_list_initializable_impl = decltype(Struct{std::declval<Args>()...});
+
+template <typename Struct, typename... Args>
+using is_direct_list_initializable = is_detected<is_direct_list_initializable_impl, Struct, Args...>;
+
+template <typename Struct, typename... Args>
+constexpr bool is_direct_list_initializable_v = is_direct_list_initializable<Struct, Args...>::value;
+
 } // namespace mcpp

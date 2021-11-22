@@ -40,8 +40,8 @@ class ffmpeg_range_opaque {
 
   public:
     using iterator = mcpp::iterator_facade::iterator_facade<iter_state>;
-    auto begin() const { return ++iterator({}); }
-    auto end() const { return iterator({}); }
+    auto begin() const { return ++iterator(); }
+    auto end() const { return iterator(); }
 };
 
 template <auto func>
@@ -58,8 +58,8 @@ class ffmpeg_range_next {
 
   public:
     using iterator = mcpp::iterator_facade::iterator_facade<iter_state>;
-    auto begin() const { return ++iterator({}); }
-    auto end() const { return iterator({}); }
+    auto begin() const { return ++iterator(); }
+    auto end() const { return iterator(); }
 };
 
 struct stream_view {
@@ -71,9 +71,12 @@ class stream_range {
     size_t size_{0};
     AVStream **streams_{nullptr};
 
-    struct iter_state {
+    class iter_state {
+      private:
         AVStream **val{nullptr};
 
+      public:
+        explicit iter_state(AVStream **ptr) : val(ptr) {}
         auto dereference() const -> stream_view { return {*val}; }
         auto distance_to(const iter_state &o) const -> std::ptrdiff_t { return val - o.val; }
         void advance(std::ptrdiff_t off) { val += off; }
@@ -81,8 +84,8 @@ class stream_range {
 
   public:
     using iterator = mcpp::iterator_facade::iterator_facade<iter_state>;
-    auto begin() const { return iterator({streams_}); }
-    auto end() const { return iterator({streams_ + size_}); }
+    auto begin() const { return iterator(streams_); }
+    auto end() const { return iterator(streams_ + size_); }
 
     auto operator[](size_t idx) const -> stream_view { return stream_view{streams_[idx]}; }
     auto size() const -> size_t { return size_; }

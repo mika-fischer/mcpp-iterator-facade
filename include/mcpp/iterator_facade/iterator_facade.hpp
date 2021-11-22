@@ -95,7 +95,13 @@ class iterator_facade {
         detected_or_t<decltype(detail::iterator_category<State>()), detail::iterator_category_t, State>;
     using iterator_concept = iterator_category;
 
-    explicit iterator_facade(State state) : state_(std::move(state)) {}
+    template <typename... Args,
+              std::enable_if_t<std::is_constructible_v<State, Args...> && !std::is_aggregate_v<State>, int> = 0>
+    explicit iterator_facade(Args &&...args) : state_(std::forward<Args>(args)...) {}
+
+    template <typename... Args,
+              std::enable_if_t<is_direct_list_initializable_v<State, Args...> && std::is_aggregate_v<State>, int> = 0>
+    explicit iterator_facade(Args &&...args) : state_{std::forward<Args>(args)...} {}
 
     auto operator*() const -> reference { return state_.dereference(); }
 
