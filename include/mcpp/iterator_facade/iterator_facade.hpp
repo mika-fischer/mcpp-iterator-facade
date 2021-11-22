@@ -82,6 +82,8 @@ constexpr auto pointer_dereference(const State &state) {
 
 template <typename State>
 struct iterator_traits {
+    static_assert(has_dereference<State>, "Iterator state needs 'auto dereference() const -> reference' member");
+
     using reference = dereference_t<State>;
     using value_type = detected_or_t<std::remove_cv_t<std::remove_reference_t<reference>>, value_type_t, State>;
     using pointer = decltype(pointer_dereference(std::declval<State>()));
@@ -91,35 +93,26 @@ struct iterator_traits {
 };
 
 template <typename Iter, typename State>
-struct equality_interface {
-    friend auto operator==(const Iter &a, const Iter &b) -> bool {
-        if constexpr (has_equal_to<State>) {
-            return a.state().equal_to(b.state());
-        } else {
-            static_assert(has_distance_to<State>, "Need .distance_to() or .equal_to()");
-            return a.state().distance_to(b.state()) == 0;
-        }
-    }
-    friend auto operator!=(const Iter &left, const Iter &right) -> bool { return !(left == right); }
+struct iterator_state_access {
+    static auto state(Iter &iter) -> State & { return iter.state_; }
+    static auto state(const Iter &iter) -> const State & { return iter.state_; }
 };
 
-struct no_equality_interface {};
+template <typename Iter, typename State, bool = has_is_at_end<State>, bool = has_distance_to_end<State>>
+struct sentinel_interface {};
 
 template <typename Iter, typename State>
-using add_equality_interface = std::conditional_t<has_equal_to<State> || has_distance_to<State>,
-                                                  equality_interface<Iter, State>, no_equality_interface>;
-
-template <typename Iter, typename State>
-struct unsized_sentinel_interface {
+struct sentinel_interface<Iter, State, true, false> {
     // TODO: Let State override sentinel_type
     struct sentinel_type {};
     static constexpr auto sentinel() noexcept -> sentinel_type { return {}; }
+    static auto state(const Iter &iter) -> const State & { return iterator_state_access<Iter, State>::state(iter); }
 
     friend auto operator==(const Iter &it, sentinel_type /*unused*/) -> bool {
         if constexpr (has_is_at_end<State>) {
-            return it.state().is_at_end();
+            return state(it).is_at_end();
         } else {
-            return it.state().distance_to_end() == 0;
+            return state(it).distance_to_end() == 0;
         }
     }
     friend auto operator!=(const Iter &it, sentinel_type sentinel) -> bool { return !(it == sentinel); }
@@ -127,9 +120,9 @@ struct unsized_sentinel_interface {
     friend auto operator!=(sentinel_type sentinel, const Iter &it) -> bool { return !(it == sentinel); }
 };
 
-template <typename Iter, typename State>
-struct sized_sentinel_interface : unsized_sentinel_interface<Iter, State> {
-    using sentinel_type = typename unsized_sentinel_interface<Iter, State>::sentinel_type;
+template <typename Iter, typename State, bool has_is_at_end>
+struct sentinel_interface<Iter, State, has_is_at_end, true> : sentinel_interface<Iter, State, true, false> {
+    using sentinel_type = typename sentinel_interface<Iter, State, true, false>::sentinel_type;
     using difference_type = typename detail::iterator_traits<State>::difference_type;
 
     friend auto operator-(sentinel_type /*unused*/, const Iter &it) -> difference_type {
@@ -137,25 +130,83 @@ struct sized_sentinel_interface : unsized_sentinel_interface<Iter, State> {
     }
 };
 
-struct no_sentinel_interface {};
+template <typename Iter, typename State, bool = has_equal_to<State> || has_distance_to<State>>
+struct equality_interface {};
 
 template <typename Iter, typename State>
-using add_sentinel_interface = std::conditional_t<
-    has_distance_to_end<State>, sized_sentinel_interface<Iter, State>,
-    std::conditional_t<has_is_at_end<State>, unsized_sentinel_interface<Iter, State>, no_sentinel_interface>>;
+struct equality_interface<Iter, State, true> {
+    static auto state(const Iter &iter) -> const State & { return iterator_state_access<Iter, State>::state(iter); }
+    friend auto operator==(const Iter &a, const Iter &b) -> bool {
+        if constexpr (has_equal_to<State>) {
+            return state(a).equal_to(state(b));
+        } else {
+            static_assert(has_distance_to<State>, "Need .distance_to() or .equal_to()");
+            return state(a).distance_to(state(b)) == 0;
+        }
+    }
+    friend auto operator!=(const Iter &left, const Iter &right) -> bool { return !(left == right); }
+};
 
 template <typename Iter, typename State>
-struct bidirectional_interface {
+struct base_iterator_interface : iterator_traits<State>,
+                                 equality_interface<Iter, State>,
+                                 sentinel_interface<Iter, State> {
+    static_assert(has_increment<State> || has_advance<State>,
+                  "Iterator state needs 'void increment()' or 'void advance(difference_type)'");
+
+    auto iter() -> Iter & { return static_cast<Iter &>(*this); }
+    auto iter() const -> const Iter & { return static_cast<const Iter &>(*this); }
+    static auto state(Iter &iter) -> State & { return iterator_state_access<Iter, State>::state(iter); }
+    static auto state(const Iter &iter) -> const State & { return iterator_state_access<Iter, State>::state(iter); }
+
+    using reference = typename detail::iterator_traits<State>::reference;
+    using pointer = typename detail::iterator_traits<State>::pointer;
+
+    auto operator*() const -> reference { return state(iter()).dereference(); }
+    auto operator->() const -> pointer { return detail::pointer_dereference(state(iter())); }
+    auto operator++() -> Iter & {
+        if constexpr (has_increment<State>) {
+            state(iter()).increment();
+        } else {
+            state(iter()).advance(1);
+        }
+        return static_cast<Iter &>(*this);
+    }
+};
+
+template <typename Iter, typename State, typename Category = typename iterator_traits<State>::iterator_category>
+struct iterator_interface {
+    static_assert(dependent_false_v<Iter>, "Invalid iterator category specified");
+};
+
+template <typename Iter, typename State>
+struct iterator_interface<Iter, State, std::input_iterator_tag> : base_iterator_interface<Iter, State> {
+    using base_iterator_interface<Iter, State>::operator++;
+    auto operator++(int) -> void { operator++(); }
+};
+
+template <typename Iter, typename State>
+struct iterator_interface<Iter, State, std::forward_iterator_tag> : base_iterator_interface<Iter, State> {
+    using base_iterator_interface<Iter, State>::operator++;
+    auto operator++(int) -> Iter {
+        auto copy = *this;
+        operator++();
+        return copy;
+    }
+};
+
+template <typename Iter, typename State>
+struct iterator_interface<Iter, State, std::bidirectional_iterator_tag>
+    : iterator_interface<Iter, State, std::forward_iterator_tag> {
     auto operator--() -> Iter & {
         if constexpr (detail::has_decrement<State>) {
-            this->state().decrement();
+            state(iter()).decrement();
         } else {
             static_assert(detail::has_advance<State>, "Need .advance() or .decrement()");
-            this->state().advance(-1);
+            state(iter()).advance(-1);
         }
         return *this;
     }
-
     auto operator--(int) -> Iter {
         auto copy = *this;
         operator--();
@@ -163,22 +214,17 @@ struct bidirectional_interface {
     }
 };
 
-struct no_bidirectional_interface {};
-
 template <typename Iter, typename State>
-using add_bidirectional_interface =
-    std::conditional_t<is_random_access<State>, bidirectional_interface<Iter, State>, no_bidirectional_interface>;
-
-template <typename Iter, typename State>
-struct random_access_interface {
+struct iterator_interface<Iter, State, std::random_access_iterator_tag>
+    : iterator_interface<Iter, State, std::bidirectional_iterator_tag> {
     using reference = typename detail::iterator_traits<State>::reference;
     using difference_type = typename detail::iterator_traits<State>::difference_type;
 
     auto operator+=(difference_type n) -> Iter & {
-        state().advance(n);
+        state(iter()).advance(n);
         return *this;
     }
-    friend auto operator-(const Iter &b, const Iter &a) -> difference_type { return a.state().distance_to(b.state()); }
+    friend auto operator-(const Iter &b, const Iter &a) -> difference_type { return state(a).distance_to(state(b)); }
 
     friend auto operator+(Iter a, difference_type n) -> Iter { return a += n; }
     friend auto operator+(difference_type n, Iter a) -> Iter { return a += n; }
@@ -191,70 +237,23 @@ struct random_access_interface {
     friend auto operator<=(const Iter &a, const Iter &b) -> bool { return !(a > b); }
 };
 
-struct no_random_access_interface {};
-
-template <typename Iter, typename State>
-using add_random_access_interface =
-    std::conditional_t<is_random_access<State>, random_access_interface<Iter, State>, no_random_access_interface>;
-
 } // namespace detail
 
 template <typename State>
-class iterator_facade : public detail::add_sentinel_interface<iterator_facade<State>, State>,
-                        public detail::add_equality_interface<iterator_facade<State>, State>,
-                        public detail::add_bidirectional_interface<iterator_facade<State>, State>,
-                        public detail::add_random_access_interface<iterator_facade<State>, State> {
+class iterator_facade : public detail::iterator_interface<iterator_facade<State>, State> {
   private:
-    static_assert(detail::has_dereference<State>, "Need .dereference()");
-    static_assert(detail::has_increment<State> || detail::has_advance<State>,
-                  "Need .increment() or .advance(integral_type)");
-
     State state_;
+    friend class detail::iterator_state_access<iterator_facade<State>, State>;
 
   public:
-    // TODO: Not so nice that this is public
-    auto state() -> State & { return state_; }
-    auto state() const -> const State & { return state_; }
-
-    using reference = typename detail::iterator_traits<State>::reference;
-    using value_type = typename detail::iterator_traits<State>::value_type;
-    using pointer = typename detail::iterator_traits<State>::pointer;
-    using difference_type = typename detail::iterator_traits<State>::difference_type;
-    using iterator_category = typename detail::iterator_traits<State>::iterator_category;
-    using iterator_concept = iterator_category;
-
     template <typename... Args,
               std::enable_if_t<std::is_constructible_v<State, Args...> && !std::is_aggregate_v<State>, int> = 0>
     explicit iterator_facade(Args &&...args) : state_(std::forward<Args>(args)...) {}
 
-    template <typename... Args,
-              std::enable_if_t<is_direct_list_initializable_v<State, Args...> && std::is_aggregate_v<State>, int> = 0>
+    template <
+        typename... Args,
+        std::enable_if_t<mcpp::is_direct_list_initializable_v<State, Args...> && std::is_aggregate_v<State>, int> = 0>
     explicit iterator_facade(Args &&...args) : state_{std::forward<Args>(args)...} {}
-
-    auto operator*() const -> reference { return state_.dereference(); }
-
-    auto operator->() const -> pointer { return detail::pointer_dereference(state_); }
-
-    auto operator++() -> iterator_facade & {
-        if constexpr (detail::has_increment<State>) {
-            state_.increment();
-        } else {
-            static_assert(detail::has_advance<State>, "Need .advance() or .increment()");
-            state_.advance(1);
-        }
-        return *this;
-    }
-
-    auto operator++(int)
-        -> std::conditional_t<std::is_same_v<iterator_category, std::input_iterator_tag>, void, iterator_facade> {
-        if constexpr (std::is_same_v<iterator_category, std::input_iterator_tag>) {
-            return operator++();
-        } else {
-            auto copy = *this;
-            operator++();
-            return copy;
-        }
-    }
 };
 
 } // namespace mcpp::iterator_facade

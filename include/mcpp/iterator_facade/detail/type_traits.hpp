@@ -71,4 +71,7 @@ using is_direct_list_initializable = is_detected<is_direct_list_initializable_im
 template <typename Struct, typename... Args>
 constexpr bool is_direct_list_initializable_v = is_direct_list_initializable<Struct, Args...>::value;
 
+template <typename>
+constexpr inline bool dependent_false_v = false;
+
 } // namespace mcpp

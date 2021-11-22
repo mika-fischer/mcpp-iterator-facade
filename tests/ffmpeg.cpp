@@ -121,9 +121,12 @@ static_assert(std::is_same_v<sr_iter_traits::difference_type, std::ptrdiff_t>);
 static_assert(std::is_same_v<decltype(std::declval<sr_iter>() += 2), sr_iter &>);
 static_assert(std::is_same_v<decltype(std::declval<sr_iter>() - std::declval<const sr_iter &>()), std::ptrdiff_t>);
 static_assert(std::is_same_v<decltype(std::declval<sr_iter>() < std::declval<const sr_iter &>()), bool>);
+static_assert(std::is_same_v<decltype(std::declval<sr_iter>() == std::declval<const sr_iter &>()), bool>);
 static_assert(std::is_same_v<decltype(std::declval<sr_iter>()[2]), stream_view>);
 static_assert(std::is_same_v<decltype(std::declval<sr_iter>() - 2), sr_iter>);
 static_assert(std::is_same_v<decltype(2 + std::declval<sr_iter>()), sr_iter>);
+static_assert(std::is_same_v<decltype(++std::declval<sr_iter>()), sr_iter &>);
+static_assert(std::is_same_v<decltype(std::declval<sr_iter>()++), sr_iter>);
 static_assert(std::is_same_v<decltype(--std::declval<sr_iter>()), sr_iter &>);
 static_assert(std::is_same_v<decltype(std::declval<sr_iter>()--), sr_iter>);
 
