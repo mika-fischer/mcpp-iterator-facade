@@ -80,6 +80,17 @@ constexpr auto pointer_dereference(const State &state) {
     }
 }
 
+template <typename State>
+struct iterator_traits {
+    using reference = detail::dereference_t<State>;
+    using value_type = detected_or_t<std::remove_cv_t<std::remove_reference_t<reference>>, detail::value_type_t, State>;
+    using pointer = decltype(detail::pointer_dereference(std::declval<State>()));
+    using difference_type = detected_or_t<std::ptrdiff_t, detail::distance_to_t, State>;
+    using iterator_category =
+        detected_or_t<decltype(detail::iterator_category<State>()), detail::iterator_category_t, State>;
+    using iterator_concept = iterator_category;
+};
+
 template <typename Iter, typename State>
 struct unsized_sentinel_interface {
     // TODO: Let State override sentinel_type
@@ -101,20 +112,53 @@ struct unsized_sentinel_interface {
 template <typename Iter, typename State>
 struct sized_sentinel_interface : unsized_sentinel_interface<Iter, State> {
     using sentinel_type = typename unsized_sentinel_interface<Iter, State>::sentinel_type;
-    friend auto operator-(sentinel_type /*unused*/, const Iter &it) { return it.state().distance_to_end(); }
+    using difference_type = typename detail::iterator_traits<State>::difference_type;
+
+    friend auto operator-(sentinel_type /*unused*/, const Iter &it) -> difference_type {
+        return it.state().distance_to_end();
+    }
 };
 
 struct no_sentinel_interface {};
 
-template <typename Iter, typename State, typename enable = void>
-using sentinel_interface = std::conditional_t<
+template <typename Iter, typename State>
+using add_sentinel_interface = std::conditional_t<
     has_distance_to_end<State>, sized_sentinel_interface<Iter, State>,
     std::conditional_t<has_is_at_end<State>, unsized_sentinel_interface<Iter, State>, no_sentinel_interface>>;
+
+template <typename Iter, typename State>
+struct random_access_interface {
+    using reference = typename detail::iterator_traits<State>::reference;
+    using difference_type = typename detail::iterator_traits<State>::difference_type;
+
+    auto operator+=(difference_type n) -> Iter & {
+        state().advance(n);
+        return *this;
+    }
+    friend auto operator-(const Iter &b, const Iter &a) -> difference_type { return a.state().distance_to(b.state()); }
+
+    friend auto operator+(Iter a, difference_type n) -> Iter { return a += n; }
+    friend auto operator+(difference_type n, Iter a) -> Iter { return a += n; }
+    auto operator-=(difference_type n) -> Iter & { return (*this) += -n; }
+    friend auto operator-(Iter i, difference_type n) -> Iter { return i -= n; }
+    auto operator[](difference_type n) -> reference { return *(*this + n); }
+    friend auto operator<(const Iter &a, const Iter &b) -> bool { return a - b < 0; }
+    friend auto operator>(const Iter &a, const Iter &b) -> bool { return b < a; }
+    friend auto operator>=(const Iter &a, const Iter &b) -> bool { return !(a < b); }
+    friend auto operator<=(const Iter &a, const Iter &b) -> bool { return !(a > b); }
+};
+
+struct no_random_access_interface {};
+
+template <typename Iter, typename State>
+using add_random_access_interface =
+    std::conditional_t<is_random_access<State>, random_access_interface<Iter, State>, no_random_access_interface>;
 
 } // namespace detail
 
 template <typename State>
-class iterator_facade : public detail::sentinel_interface<iterator_facade<State>, State> {
+class iterator_facade : public detail::add_sentinel_interface<iterator_facade<State>, State>,
+                        public detail::add_random_access_interface<iterator_facade<State>, State> {
   private:
     static_assert(detail::has_dereference<State>, "Need .dereference()");
     static_assert(detail::has_increment<State> || detail::has_advance<State>,
@@ -127,12 +171,11 @@ class iterator_facade : public detail::sentinel_interface<iterator_facade<State>
     auto state() -> State & { return state_; }
     auto state() const -> const State & { return state_; }
 
-    using reference = detail::dereference_t<State>;
-    using value_type = detected_or_t<std::remove_cv_t<std::remove_reference_t<reference>>, detail::value_type_t, State>;
-    using pointer = decltype(detail::pointer_dereference(std::declval<State>()));
-    using difference_type = detected_or_t<std::ptrdiff_t, detail::distance_to_t, State>;
-    using iterator_category =
-        detected_or_t<decltype(detail::iterator_category<State>()), detail::iterator_category_t, State>;
+    using reference = typename detail::iterator_traits<State>::reference;
+    using value_type = typename detail::iterator_traits<State>::value_type;
+    using pointer = typename detail::iterator_traits<State>::pointer;
+    using difference_type = typename detail::iterator_traits<State>::difference_type;
+    using iterator_category = typename detail::iterator_traits<State>::iterator_category;
     using iterator_concept = iterator_category;
 
     template <typename... Args,
@@ -204,63 +247,6 @@ class iterator_facade : public detail::sentinel_interface<iterator_facade<State>
             operator--();
             return copy;
         }
-    }
-
-    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
-    auto operator+=(difference_type n) -> iterator_facade & {
-        state().advance(n);
-        return *this;
-    }
-
-    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
-    friend auto operator+(iterator_facade a, difference_type n) -> iterator_facade {
-        return a += n;
-    }
-
-    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
-    friend auto operator+(difference_type n, iterator_facade a) -> iterator_facade {
-        return a += n;
-    }
-
-    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
-    auto operator-=(difference_type n) -> iterator_facade & {
-        state().advance(-n);
-        return *this;
-    }
-
-    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
-    friend auto operator-(iterator_facade i, difference_type n) -> iterator_facade {
-        return i -= n;
-    }
-
-    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
-    friend auto operator-(const iterator_facade &b, const iterator_facade &a) -> difference_type {
-        return a.distance_to(b);
-    }
-
-    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
-    auto operator[](difference_type n) -> reference {
-        return *(*this + n);
-    }
-
-    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
-    friend auto operator<(const iterator_facade &a, const iterator_facade &b) -> bool {
-        return a.distance_to(b) > 0;
-    }
-
-    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
-    friend auto operator>(const iterator_facade &a, const iterator_facade &b) -> bool {
-        return b < a;
-    }
-
-    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
-    friend auto operator>=(const iterator_facade &a, const iterator_facade &b) -> bool {
-        return !(a < b);
-    }
-
-    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
-    friend auto operator<=(const iterator_facade &a, const iterator_facade &b) -> bool {
-        return !(a > b);
     }
 };
 
