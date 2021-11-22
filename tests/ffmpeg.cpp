@@ -7,17 +7,26 @@
 #include <iterator>
 #include <string_view>
 
+extern "C" {
+struct AVCodecDescriptor;
+auto avcodec_descriptor_next(const AVCodecDescriptor * /* prev */) -> const AVCodecDescriptor * {
+    return nullptr;
+}
+auto avio_enum_protocols(void ** /*opaque*/, int /*output*/) -> const char * {
+    return nullptr;
+}
+}
+
 using namespace std::literals;
 
 template <auto func, auto... args>
 class ffmpeg_range_opaque {
   private:
     struct iter_state {
-        using iterator_category = std::input_iterator_tag;
-
         void *state = nullptr;
         const char *val = nullptr;
 
+        using iterator_category = std::input_iterator_tag;
         auto dereference() const -> std::string_view { return val; }
         auto equal_to(const iter_state &o) const -> bool { return val == nullptr && o.val == nullptr; }
         void increment() { val = std::invoke(func, &state, args...); }
@@ -25,8 +34,8 @@ class ffmpeg_range_opaque {
 
   public:
     using iterator = mcpp::iterator_facade::iterator_facade<iter_state>;
-    auto begin() const { return ++iterator{}; }
-    auto end() const { return iterator{}; }
+    auto begin() const { return ++iterator({}); }
+    auto end() const { return iterator({}); }
 };
 
 template <auto func>
@@ -43,20 +52,11 @@ class ffmpeg_range_next {
 
   public:
     using iterator = mcpp::iterator_facade::iterator_facade<iter_state>;
-    auto begin() const { return ++iterator{}; }
-    auto end() const { return iterator{}; }
+    auto begin() const { return ++iterator({}); }
+    auto end() const { return iterator({}); }
 };
 
-extern "C" {
-struct AVCodecDescriptor;
-auto avcodec_descriptor_next(const AVCodecDescriptor * /* prev */) -> const AVCodecDescriptor * {
-    return nullptr;
-}
-auto avio_enum_protocols(void ** /*opaque*/, int /*output*/) -> const char * {
-    return nullptr;
-}
-}
-
+// Static tests
 using codec_descriptors = ffmpeg_range_next<avcodec_descriptor_next>;
 using cd_iter = codec_descriptors::iterator;
 using cd_iter_traits = std::iterator_traits<cd_iter>;
@@ -75,6 +75,7 @@ static_assert(std::is_same_v<ap_iter_traits::pointer, mcpp::iterator_facade::det
 static_assert(std::is_same_v<ap_iter_traits::value_type, std::string_view>); // TODO: What *should* this be?
 static_assert(std::is_same_v<ap_iter_traits::difference_type, std::ptrdiff_t>);
 
+// runtime tests
 auto main() -> int {
     for (const auto &desc : codec_descriptors()) {
     }

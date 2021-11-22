@@ -95,8 +95,7 @@ class iterator_facade {
         detected_or_t<decltype(detail::iterator_category<State>()), detail::iterator_category_t, State>;
     using iterator_concept = iterator_category;
 
-    template <class... Args>
-    explicit iterator_facade(Args &&...args) : state_(std::forward<Args>(args)...) {}
+    explicit iterator_facade(State state) : state_(std::move(state)) {}
 
     auto operator*() const -> reference { return state_.dereference(); }
 
