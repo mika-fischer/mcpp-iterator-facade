@@ -106,7 +106,6 @@ struct sentinel_interface<Iter, State, true, false> {
     // TODO: Let State override sentinel_type
     struct sentinel_type {};
     static constexpr auto sentinel() noexcept -> sentinel_type { return {}; }
-    static auto state(const Iter &iter) -> const State & { return iterator_state_access<Iter, State>::state(iter); }
 
     friend auto operator==(const Iter &it, sentinel_type /*unused*/) -> bool {
         if constexpr (has_is_at_end<State>) {
@@ -118,6 +117,9 @@ struct sentinel_interface<Iter, State, true, false> {
     friend auto operator!=(const Iter &it, sentinel_type sentinel) -> bool { return !(it == sentinel); }
     friend auto operator==(sentinel_type sentinel, const Iter &it) -> bool { return it == sentinel; }
     friend auto operator!=(sentinel_type sentinel, const Iter &it) -> bool { return !(it == sentinel); }
+
+  private:
+    static auto state(const Iter &iter) -> const State & { return iterator_state_access<Iter, State>::state(iter); }
 };
 
 template <typename Iter, typename State, bool has_is_at_end>
@@ -135,7 +137,6 @@ struct equality_interface {};
 
 template <typename Iter, typename State>
 struct equality_interface<Iter, State, true> {
-    static auto state(const Iter &iter) -> const State & { return iterator_state_access<Iter, State>::state(iter); }
     friend auto operator==(const Iter &a, const Iter &b) -> bool {
         if constexpr (has_equal_to<State>) {
             return state(a).equal_to(state(b));
@@ -145,6 +146,9 @@ struct equality_interface<Iter, State, true> {
         }
     }
     friend auto operator!=(const Iter &left, const Iter &right) -> bool { return !(left == right); }
+
+  private:
+    static auto state(const Iter &iter) -> const State & { return iterator_state_access<Iter, State>::state(iter); }
 };
 
 template <typename Iter, typename State>
@@ -153,11 +157,6 @@ struct base_iterator_interface : iterator_traits<State>,
                                  sentinel_interface<Iter, State> {
     static_assert(has_increment<State> || has_advance<State>,
                   "Iterator state needs 'void increment()' or 'void advance(difference_type)'");
-
-    auto iter() -> Iter & { return static_cast<Iter &>(*this); }
-    auto iter() const -> const Iter & { return static_cast<const Iter &>(*this); }
-    static auto state(Iter &iter) -> State & { return iterator_state_access<Iter, State>::state(iter); }
-    static auto state(const Iter &iter) -> const State & { return iterator_state_access<Iter, State>::state(iter); }
 
     using reference = typename detail::iterator_traits<State>::reference;
     using pointer = typename detail::iterator_traits<State>::pointer;
@@ -172,6 +171,12 @@ struct base_iterator_interface : iterator_traits<State>,
         }
         return static_cast<Iter &>(*this);
     }
+
+  protected:
+    auto iter() -> Iter & { return static_cast<Iter &>(*this); }
+    auto iter() const -> const Iter & { return static_cast<const Iter &>(*this); }
+    static auto state(Iter &iter) -> State & { return iterator_state_access<Iter, State>::state(iter); }
+    static auto state(const Iter &iter) -> const State & { return iterator_state_access<Iter, State>::state(iter); }
 };
 
 template <typename Iter, typename State, typename Category = typename iterator_traits<State>::iterator_category>
