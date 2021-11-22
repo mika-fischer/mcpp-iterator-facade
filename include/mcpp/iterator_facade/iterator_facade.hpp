@@ -82,14 +82,32 @@ constexpr auto pointer_dereference(const State &state) {
 
 template <typename State>
 struct iterator_traits {
-    using reference = detail::dereference_t<State>;
-    using value_type = detected_or_t<std::remove_cv_t<std::remove_reference_t<reference>>, detail::value_type_t, State>;
-    using pointer = decltype(detail::pointer_dereference(std::declval<State>()));
-    using difference_type = detected_or_t<std::ptrdiff_t, detail::distance_to_t, State>;
-    using iterator_category =
-        detected_or_t<decltype(detail::iterator_category<State>()), detail::iterator_category_t, State>;
+    using reference = dereference_t<State>;
+    using value_type = detected_or_t<std::remove_cv_t<std::remove_reference_t<reference>>, value_type_t, State>;
+    using pointer = decltype(pointer_dereference(std::declval<State>()));
+    using difference_type = detected_or_t<std::ptrdiff_t, distance_to_t, State>;
+    using iterator_category = detected_or_t<decltype(iterator_category<State>()), iterator_category_t, State>;
     using iterator_concept = iterator_category;
 };
+
+template <typename Iter, typename State>
+struct equality_interface {
+    friend auto operator==(const Iter &a, const Iter &b) -> bool {
+        if constexpr (has_equal_to<State>) {
+            return a.state().equal_to(b.state());
+        } else {
+            static_assert(has_distance_to<State>, "Need .distance_to() or .equal_to()");
+            return a.state().distance_to(b.state()) == 0;
+        }
+    }
+    friend auto operator!=(const Iter &left, const Iter &right) -> bool { return !(left == right); }
+};
+
+struct no_equality_interface {};
+
+template <typename Iter, typename State>
+using add_equality_interface = std::conditional_t<has_equal_to<State> || has_distance_to<State>,
+                                                  equality_interface<Iter, State>, no_equality_interface>;
 
 template <typename Iter, typename State>
 struct unsized_sentinel_interface {
@@ -183,6 +201,7 @@ using add_random_access_interface =
 
 template <typename State>
 class iterator_facade : public detail::add_sentinel_interface<iterator_facade<State>, State>,
+                        public detail::add_equality_interface<iterator_facade<State>, State>,
                         public detail::add_bidirectional_interface<iterator_facade<State>, State>,
                         public detail::add_random_access_interface<iterator_facade<State>, State> {
   private:
@@ -215,21 +234,6 @@ class iterator_facade : public detail::add_sentinel_interface<iterator_facade<St
     auto operator*() const -> reference { return state_.dereference(); }
 
     auto operator->() const -> pointer { return detail::pointer_dereference(state_); }
-
-    template <typename T = State, std::enable_if_t<detail::has_equal_to<T> || detail::has_distance_to<T>, int> = 0>
-    friend auto operator==(const iterator_facade &left, const iterator_facade &right) -> bool {
-        if constexpr (detail::has_equal_to<State>) {
-            return left.state_.equal_to(right.state_);
-        } else {
-            static_assert(detail::has_distance_to<State>, "Need .distance_to() or .equal_to()");
-            return left.state_.distance_to(right.state_) == 0;
-        }
-    }
-
-    template <typename T = State, std::enable_if_t<detail::has_equal_to<T> || detail::has_distance_to<T>, int> = 0>
-    friend auto operator!=(const iterator_facade &left, const iterator_facade &right) -> bool {
-        return !(left == right);
-    }
 
     auto operator++() -> iterator_facade & {
         if constexpr (detail::has_increment<State>) {
