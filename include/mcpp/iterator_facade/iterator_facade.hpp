@@ -157,6 +157,63 @@ class iterator_facade {
             return copy;
         }
     }
+
+    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
+    auto operator+=(difference_type n) -> iterator_facade & {
+        state().advance(n);
+        return *this;
+    }
+
+    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
+    friend auto operator+(iterator_facade a, difference_type n) -> iterator_facade {
+        return a += n;
+    }
+
+    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
+    friend auto operator+(difference_type n, iterator_facade a) -> iterator_facade {
+        return a += n;
+    }
+
+    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
+    auto operator-=(difference_type n) -> iterator_facade & {
+        state().advance(-n);
+        return *this;
+    }
+
+    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
+    friend auto operator-(iterator_facade i, difference_type n) -> iterator_facade {
+        return i -= n;
+    }
+
+    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
+    friend auto operator-(const iterator_facade &b, const iterator_facade &a) -> difference_type {
+        return a.distance_to(b);
+    }
+
+    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
+    auto operator[](difference_type n) -> reference {
+        return *(*this + n);
+    }
+
+    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
+    friend auto operator<(const iterator_facade &a, const iterator_facade &b) -> bool {
+        return a.distance_to(b) > 0;
+    }
+
+    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
+    friend auto operator>(const iterator_facade &a, const iterator_facade &b) -> bool {
+        return b < a;
+    }
+
+    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
+    friend auto operator>=(const iterator_facade &a, const iterator_facade &b) -> bool {
+        return !(a < b);
+    }
+
+    template <typename T = State, std::enable_if_t<detail::is_random_access<T>, int> = 0>
+    friend auto operator<=(const iterator_facade &a, const iterator_facade &b) -> bool {
+        return !(a > b);
+    }
 };
 
 } // namespace mcpp::iterator_facade

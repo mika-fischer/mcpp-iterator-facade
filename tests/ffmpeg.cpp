@@ -6,6 +6,7 @@
 #include <functional>
 #include <iterator>
 #include <string_view>
+#include <utility>
 
 extern "C" {
 struct AVCodecDescriptor;
@@ -15,6 +16,11 @@ auto avcodec_descriptor_next(const AVCodecDescriptor * /* prev */) -> const AVCo
 auto avio_enum_protocols(void ** /*opaque*/, int /*output*/) -> const char * {
     return nullptr;
 }
+struct AVStream;
+struct AVFormatContext {
+    unsigned int nb_streams;
+    AVStream **streams;
+};
 }
 
 using namespace std::literals;
@@ -56,6 +62,32 @@ class ffmpeg_range_next {
     auto end() const { return iterator({}); }
 };
 
+struct stream_view {
+    AVStream *stream;
+};
+
+class stream_range {
+  private:
+    size_t size_{0};
+    AVStream **streams_{nullptr};
+
+    struct iter_state {
+        AVStream **val{nullptr};
+
+        auto dereference() const -> stream_view { return {*val}; }
+        auto distance_to(const iter_state &o) const -> std::ptrdiff_t { return val - o.val; }
+        void advance(std::ptrdiff_t off) { val += off; }
+    };
+
+  public:
+    using iterator = mcpp::iterator_facade::iterator_facade<iter_state>;
+    auto begin() const { return iterator({streams_}); }
+    auto end() const { return iterator({streams_ + size_}); }
+
+    auto operator[](size_t idx) const -> stream_view { return stream_view{streams_[idx]}; }
+    auto size() const -> size_t { return size_; }
+};
+
 // Static tests
 using codec_descriptors = ffmpeg_range_next<avcodec_descriptor_next>;
 using cd_iter = codec_descriptors::iterator;
@@ -74,6 +106,20 @@ static_assert(std::is_same_v<ap_iter_traits::reference, std::string_view>);
 static_assert(std::is_same_v<ap_iter_traits::pointer, mcpp::iterator_facade::detail::arrow_proxy<std::string_view>>);
 static_assert(std::is_same_v<ap_iter_traits::value_type, std::string_view>); // TODO: What *should* this be?
 static_assert(std::is_same_v<ap_iter_traits::difference_type, std::ptrdiff_t>);
+
+using sr_iter = stream_range::iterator;
+using sr_iter_traits = std::iterator_traits<sr_iter>;
+static_assert(std::is_same_v<sr_iter_traits::iterator_category, std::random_access_iterator_tag>);
+static_assert(std::is_same_v<sr_iter_traits::reference, stream_view>);
+static_assert(std::is_same_v<sr_iter_traits::pointer, mcpp::iterator_facade::detail::arrow_proxy<stream_view>>);
+static_assert(std::is_same_v<sr_iter_traits::value_type, stream_view>); // TODO: What *should* this be?
+static_assert(std::is_same_v<sr_iter_traits::difference_type, std::ptrdiff_t>);
+static_assert(std::is_same_v<decltype(std::declval<sr_iter>() += 2), sr_iter &>);
+static_assert(std::is_same_v<decltype(std::declval<sr_iter>() - std::declval<const sr_iter &>()), std::ptrdiff_t>);
+static_assert(std::is_same_v<decltype(std::declval<sr_iter>() < std::declval<const sr_iter &>()), bool>);
+static_assert(std::is_same_v<decltype(std::declval<sr_iter>()[2]), stream_view>);
+static_assert(std::is_same_v<decltype(std::declval<sr_iter>() - 2), sr_iter>);
+static_assert(std::is_same_v<decltype(2 + std::declval<sr_iter>()), sr_iter>);
 
 // runtime tests
 auto main() -> int {
