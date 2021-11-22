@@ -141,7 +141,6 @@ struct equality_interface<Iter, State, true> {
         if constexpr (has_equal_to<State>) {
             return state(a).equal_to(state(b));
         } else {
-            static_assert(has_distance_to<State>, "Need .distance_to() or .equal_to()");
             return state(a).distance_to(state(b)) == 0;
         }
     }
@@ -157,6 +156,8 @@ struct base_iterator_interface : iterator_traits<State>,
                                  sentinel_interface<Iter, State> {
     static_assert(has_increment<State> || has_advance<State>,
                   "Iterator state needs 'void increment()' or 'void advance(difference_type)'");
+
+    // TODO: Check that some kind of equality operators exist...
 
     using reference = typename detail::iterator_traits<State>::reference;
     using pointer = typename detail::iterator_traits<State>::pointer;
@@ -203,11 +204,13 @@ struct iterator_interface<Iter, State, std::forward_iterator_tag> : base_iterato
 template <typename Iter, typename State>
 struct iterator_interface<Iter, State, std::bidirectional_iterator_tag>
     : iterator_interface<Iter, State, std::forward_iterator_tag> {
+    static_assert(detail::has_decrement<State> || detail::has_advance<State>,
+                  "Iterator state needs 'void decrement()' or 'void advance(difference_type)'");
+
     auto operator--() -> Iter & {
         if constexpr (detail::has_decrement<State>) {
             state(iter()).decrement();
         } else {
-            static_assert(detail::has_advance<State>, "Need .advance() or .decrement()");
             state(iter()).advance(-1);
         }
         return *this;
@@ -222,6 +225,10 @@ struct iterator_interface<Iter, State, std::bidirectional_iterator_tag>
 template <typename Iter, typename State>
 struct iterator_interface<Iter, State, std::random_access_iterator_tag>
     : iterator_interface<Iter, State, std::bidirectional_iterator_tag> {
+    static_assert(
+        detail::has_advance<State> && detail::has_distance_to<State>,
+        "Iterator state needs 'void advance(difference_type)' and 'auto distance_to(const State&) -> difference_type'");
+
     using reference = typename detail::iterator_traits<State>::reference;
     using difference_type = typename detail::iterator_traits<State>::difference_type;
 
