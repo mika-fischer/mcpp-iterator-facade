@@ -7,7 +7,7 @@ else ()
     set(is_toplevel FALSE)
 endif ()
 
-option(mcpp_iterator_facade_WITH_TESTS "Build tests" ${is_topleve})
+option(mcpp_iterator_facade_WITH_TESTS "Build tests" ${is_toplevel})
 
 add_library(mcpp_iterator_facade INTERFACE)
 target_include_directories(mcpp_iterator_facade INTERFACE include)
