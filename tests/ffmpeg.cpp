@@ -48,18 +48,18 @@ template <auto func>
 class ffmpeg_range_next {
   private:
     struct iter_state {
-        decltype(func(nullptr)) val{nullptr};
+        decltype(func(nullptr)) val{func(nullptr)};
 
         using iterator_category = std::input_iterator_tag;
         auto dereference() const -> decltype(auto) { return *val; }
-        auto equal_to(const iter_state &o) const -> bool { return val == nullptr && o.val == nullptr; }
+        auto is_at_end() const -> bool { return val == nullptr; }
         void increment() { val = std::invoke(func, val); }
     };
 
   public:
     using iterator = mcpp::iterator_facade::iterator_facade<iter_state>;
     auto begin() const { return ++iterator(); }
-    auto end() const { return iterator(); }
+    auto end() const { return iterator::sentinel(); }
 };
 
 struct stream_view {
@@ -100,6 +100,7 @@ static_assert(std::is_same_v<cd_iter_traits::reference, const AVCodecDescriptor 
 static_assert(std::is_same_v<cd_iter_traits::pointer, const AVCodecDescriptor *>);
 static_assert(std::is_same_v<cd_iter_traits::value_type, AVCodecDescriptor>);
 static_assert(std::is_same_v<cd_iter_traits::difference_type, std::ptrdiff_t>);
+static_assert(std::is_same_v<decltype(std::declval<cd_iter>() == cd_iter::sentinel_type{}), bool>);
 
 using avio_protocols = ffmpeg_range_opaque<avio_enum_protocols, 0>;
 using ap_iter = avio_protocols::iterator;

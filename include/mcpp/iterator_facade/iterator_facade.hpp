@@ -24,6 +24,10 @@ using advance_t = decltype(std::declval<T &>().advance(std::declval<int>()));
 template <typename T>
 using distance_to_t = decltype(std::declval<const T &>().distance_to(std::declval<const T &>()));
 template <typename T>
+using is_at_end_t = decltype(std::declval<const T &>().is_at_end());
+template <typename T>
+using distance_to_end_t = decltype(std::declval<const T &>().distance_to_end());
+template <typename T>
 using value_type_t = typename T::value_type;
 template <typename T>
 using iterator_category_t = typename T::iterator_category;
@@ -40,6 +44,10 @@ template <typename T>
 constexpr bool has_advance = is_detected_v<advance_t, T>;
 template <typename T>
 constexpr bool has_distance_to = is_detected_v<distance_to_t, T>;
+template <typename T>
+constexpr bool has_is_at_end = is_detected_v<is_at_end_t, T>;
+template <typename T>
+constexpr bool has_distance_to_end = is_detected_v<distance_to_end_t, T>;
 
 template <typename T>
 constexpr bool is_random_access = has_advance<T> &&has_distance_to<T>;
@@ -71,10 +79,42 @@ constexpr auto pointer_dereference(const State &state) {
         return detail::arrow_proxy<decltype(state.dereference())>{state.dereference()};
     }
 }
+
+template <typename Iter, typename State>
+struct unsized_sentinel_interface {
+    // TODO: Let State override sentinel_type
+    struct sentinel_type {};
+    static constexpr auto sentinel() noexcept -> sentinel_type { return {}; }
+
+    friend auto operator==(const Iter &it, sentinel_type /*unused*/) -> bool {
+        if constexpr (has_is_at_end<State>) {
+            return it.state().is_at_end();
+        } else {
+            return it.state().distance_to_end() == 0;
+        }
+    }
+    friend auto operator!=(const Iter &it, sentinel_type sentinel) -> bool { return !(it == sentinel); }
+    friend auto operator==(sentinel_type sentinel, const Iter &it) -> bool { return it == sentinel; }
+    friend auto operator!=(sentinel_type sentinel, const Iter &it) -> bool { return !(it == sentinel); }
+};
+
+template <typename Iter, typename State>
+struct sized_sentinel_interface : unsized_sentinel_interface<Iter, State> {
+    using sentinel_type = typename unsized_sentinel_interface<Iter, State>::sentinel_type;
+    friend auto operator-(sentinel_type /*unused*/, const Iter &it) { return it.state().distance_to_end(); }
+};
+
+struct no_sentinel_interface {};
+
+template <typename Iter, typename State, typename enable = void>
+using sentinel_interface = std::conditional_t<
+    has_distance_to_end<State>, sized_sentinel_interface<Iter, State>,
+    std::conditional_t<has_is_at_end<State>, unsized_sentinel_interface<Iter, State>, no_sentinel_interface>>;
+
 } // namespace detail
 
 template <typename State>
-class iterator_facade {
+class iterator_facade : public detail::sentinel_interface<iterator_facade<State>, State> {
   private:
     static_assert(detail::has_dereference<State>, "Need .dereference()");
     static_assert(detail::has_increment<State> || detail::has_advance<State>,
@@ -82,11 +122,11 @@ class iterator_facade {
 
     State state_;
 
-  protected:
+  public:
+    // TODO: Not so nice that this is public
     auto state() -> State & { return state_; }
     auto state() const -> const State & { return state_; }
 
-  public:
     using reference = detail::dereference_t<State>;
     using value_type = detected_or_t<std::remove_cv_t<std::remove_reference_t<reference>>, detail::value_type_t, State>;
     using pointer = decltype(detail::pointer_dereference(std::declval<State>()));
@@ -107,6 +147,7 @@ class iterator_facade {
 
     auto operator->() const -> pointer { return detail::pointer_dereference(state_); }
 
+    template <typename T = State, std::enable_if_t<detail::has_equal_to<T> || detail::has_distance_to<T>, int> = 0>
     friend auto operator==(const iterator_facade &left, const iterator_facade &right) -> bool {
         if constexpr (detail::has_equal_to<State>) {
             return left.state_.equal_to(right.state_);
@@ -116,6 +157,7 @@ class iterator_facade {
         }
     }
 
+    template <typename T = State, std::enable_if_t<detail::has_equal_to<T> || detail::has_distance_to<T>, int> = 0>
     friend auto operator!=(const iterator_facade &left, const iterator_facade &right) -> bool {
         return !(left == right);
     }
