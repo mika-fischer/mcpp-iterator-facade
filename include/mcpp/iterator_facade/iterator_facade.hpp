@@ -209,9 +209,9 @@ struct iterator_interface<Iter, State, std::bidirectional_iterator_tag>
 
     auto operator--() -> Iter & {
         if constexpr (detail::has_decrement<State>) {
-            state(iter()).decrement();
+            state(this->iter()).decrement();
         } else {
-            state(iter()).advance(-1);
+            state(this->iter()).advance(-1);
         }
         return *this;
     }
@@ -233,7 +233,7 @@ struct iterator_interface<Iter, State, std::random_access_iterator_tag>
     using difference_type = typename detail::iterator_traits<State>::difference_type;
 
     auto operator+=(difference_type n) -> Iter & {
-        state(iter()).advance(n);
+        state(this->iter()).advance(n);
         return *this;
     }
     friend auto operator-(const Iter &b, const Iter &a) -> difference_type { return state(a).distance_to(state(b)); }
@@ -255,7 +255,7 @@ template <typename State>
 class iterator_facade : public detail::iterator_interface<iterator_facade<State>, State> {
   private:
     State state_;
-    friend class detail::iterator_state_access<iterator_facade<State>, State>;
+    friend struct detail::iterator_state_access<iterator_facade<State>, State>;
 
   public:
     template <typename... Args,
